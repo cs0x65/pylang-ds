@@ -38,6 +38,100 @@ to leverage the string field(s) of the class to generate a unique number.
     jshell> System.out.println(s.hashCode());
     -586076396
 """
+from typing import Any
+
+
+class PycsDictEntry:
+    """
+    A class representing an entry in the hash table.
+    """
+    def __init__(self, key: str, value: Any):
+        self.key = key
+        self.value = value
+        # With this, a support is in place for a possible linked list construction for handling collisions.
+        # It's upto the implementation of the `PycsDict` class to decide how to handle the collisions - linked list,
+        # sequential list or trees.
+        self.next_entry = None
 
 class PycsDict:
-    pass
+    FNV1A_OFFSET: int = 14695981039346656037
+    FNV1A_PRIME: int = 1099511628211
+    LOAD_FACTOR: float = 0.75
+
+    def __init__(self, size: int):
+        self.size = size or 8
+        # Allocate the initial capacity to twice the size to reduce collisions
+        self.capacity = size * 2
+        self.table: Any = [None] * self.capacity
+
+    @staticmethod
+    def _get_hash(key: str) -> int:
+        """
+        Hashing function to convert a string key into a numeric value.
+        """
+        hash_value = PycsDict.FNV1A_OFFSET
+        for char in key:
+            hash_value ^= ord(char)
+            hash_value *= PycsDict.FNV1A_PRIME
+        return hash_value
+
+    @staticmethod
+    def _get_bucket_index(hash_value: int, capacity: int) -> int:
+        """
+        Get the bucket index for a given hash value.
+        """
+        return hash_value % capacity
+
+    def __getitem__(self, key: str) -> Any:
+        bucket_index =  PycsDict._get_bucket_index(PycsDict._get_hash(key), self.capacity)
+        entry = self.table[bucket_index]
+        if isinstance(entry, PycsDictEntry):
+            if entry.key == key:
+                return entry.value
+        elif isinstance(entry, list):
+            for entry in entry:
+                if entry.key == key:
+                    return entry.value
+        raise KeyError(f'{self.__class__.__name__} Key {key} not found in dictionary.')
+
+    def __setitem__(self, key: str, value: Any):
+        # TODO: add support for resizing the table when load factor exceeds threshold
+        bucket_index = PycsDict._get_bucket_index(PycsDict._get_hash(key), self.capacity)
+        entry = self.table[bucket_index]
+        old_value = value
+        if entry is None:
+            self.table.insert(bucket_index, PycsDictEntry(key, value))
+        elif isinstance(entry, PycsDictEntry):
+            if entry.key == key:
+                old_value = entry.value
+                entry.value = value
+            else:
+                # Collision resolution using sequential list; the implementation can be replaced with a linked list,
+                # if required
+                bucket: Any = [None] * int(self.capacity / 4)
+                bucket.append(entry)
+                bucket.append(PycsDictEntry(key, value))
+        else:
+            # Collision resolution
+            bucket = entry
+            for entry in bucket:
+                if entry.key == key:
+                    old_value = entry.value
+                    entry.value = value
+                    break
+        return old_value
+
+
+if __name__ == '__main__':
+    # Example usage
+    pycs_dict = PycsDict(10)
+    pycs_dict['email'] = 'saurabh.cse2@gmail.com'
+    pycs_dict['city'] = 'Pandharpur'
+    pycs_dict['passion'] = 'Technology & Software Engineering'
+
+    print(f'Hi there! I am {pycs_dict["email"]} from {pycs_dict["city"]} and I am passionate about'
+          f' {pycs_dict["passion"]}.')
+    pycs_dict['city'] = 'Bengaluru'
+    print(f'I am currently located in {pycs_dict["city"]}.')
+    print(pycs_dict['dob'])
+
