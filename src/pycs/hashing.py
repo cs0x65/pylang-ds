@@ -53,6 +53,10 @@ class PycsDictEntry:
         # sequential list or trees.
         self.next_entry = None
 
+    def __str__(self):
+        return f'{self.key}: {self.value}'
+
+
 class PycsDict:
     FNV1A_OFFSET: int = 14695981039346656037
     FNV1A_PRIME: int = 1099511628211
@@ -62,7 +66,26 @@ class PycsDict:
         self.size = size or 8
         # Allocate the initial capacity to twice the size to reduce collisions
         self.capacity = size * 2
+
         self.table: Any = [None] * self.capacity
+        """
+        This will actually allocate the list with given capacity i.e. it will create a list of given capacity where
+        all the list elements are `None` values. This is different from:
+        
+        :: 
+            
+            self.table = []
+            # or
+            self.table = list()
+        When it's an empty list, we keep on appending the elements - self.table.append(PycsDictEntry(key, value)).
+        But when we allocate the list with a given capacity, we can directly access index in the list & also set the 
+        value at that index - self.table[bucket_index] = PycsDictEntry(key, value).
+        This is was the root cause why the `KeyError` was being raised when trying to access the key earlier -- 
+        because the code was inserting the entry/bucket at the given index 
+        self.table.insert(bucket_index, PycsDictEntry(key, value)) rather than setting the entry/bucket at the index 
+        self.table[bucket_index] = PycsDictEntry(key, value). The insertion used to change the list size and hence, 
+        _get_bucket_index function was returning a different index than the one where the entry was actually stored.
+        """
 
     @staticmethod
     def _get_hash(key: str) -> int:
@@ -89,9 +112,10 @@ class PycsDict:
             if entry.key == key:
                 return entry.value
         elif isinstance(entry, list):
-            for entry in entry:
-                if entry.key == key:
-                    return entry.value
+            bucket = entry
+            for e in bucket:
+                if e.key == key:
+                    return e.value
         raise KeyError(f'{self.__class__.__name__} Key {key} not found in dictionary.')
 
     def __setitem__(self, key: str, value: Any):
@@ -100,26 +124,42 @@ class PycsDict:
         entry = self.table[bucket_index]
         old_value = value
         if entry is None:
-            self.table.insert(bucket_index, PycsDictEntry(key, value))
+            self.table[bucket_index] = PycsDictEntry(key, value)
         elif isinstance(entry, PycsDictEntry):
             if entry.key == key:
                 old_value = entry.value
                 entry.value = value
             else:
-                # Collision resolution using sequential list; the implementation can be replaced with a linked list,
-                # if required
+                # Collision resolution using sequential list - a bucket is created to hold the multiple entries being
+                # hashed to this index; the implementation can be replaced with a linked list, if required
                 bucket: Any = [None] * int(self.capacity / 4)
                 bucket.append(entry)
                 bucket.append(PycsDictEntry(key, value))
+                self.table[bucket_index] = bucket
         else:
-            # Collision resolution
+            # Collision - search sequentially in the bucket
             bucket = entry
-            for entry in bucket:
-                if entry.key == key:
-                    old_value = entry.value
-                    entry.value = value
+            for e in bucket:
+                if e.key == key:
+                    old_value = e.value
+                    e.value = value
                     break
+            # If the key was not found in the bucket, append a new entry
+            bucket.append(PycsDictEntry(key, value))
         return old_value
+
+    def __str__(self):
+        """
+        String representation of the PycsDict.
+        """
+        entries = []
+        for entry in self.table:
+            if isinstance(entry, PycsDictEntry):
+                entries.append(str(entry))
+            elif isinstance(entry, list):
+                for e in entry:
+                    entries.append(str(e))
+        return '{' + ', '.join(entries) + '}'
 
 
 if __name__ == '__main__':
@@ -127,9 +167,11 @@ if __name__ == '__main__':
     pycs_dict = PycsDict(10)
     pycs_dict['email'] = 'saurabh.cse2@gmail.com'
     pycs_dict['city'] = 'Pandharpur'
-    pycs_dict['passion'] = 'Technology & Software Engineering'
+    pycs_dict['passion'] = 'Computer Science, Software Engineering & Technology'
 
-    print(f'Hi there! I am {pycs_dict["email"]} from {pycs_dict["city"]} and I am passionate about'
+    print(f'pycs_dict = {pycs_dict}')
+
+    print(f'Hi there! I am {pycs_dict["email"]} from {pycs_dict["city"]} and am passionate about'
           f' {pycs_dict["passion"]}.')
     pycs_dict['city'] = 'Bengaluru'
     print(f'I am currently located in {pycs_dict["city"]}.')
